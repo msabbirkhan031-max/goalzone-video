@@ -1,0 +1,53 @@
+name: Render Goal Zone video
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Locate project
+        run: |
+          if [ -f package.json ]; then
+            echo "DIR=." >> "$GITHUB_ENV"
+          else
+            unzip -q goalzone-remotion.zip -d _project
+            P=$(find _project -name package.json -not -path '*/node_modules/*' | head -1)
+            echo "DIR=$(dirname "$P")" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install system libraries for Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libgbm-dev libasound2t64 libxrandr2 libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 libpango-1.0-0 libcairo2 libcups2
+
+      - name: Install dependencies
+        run: cd "$DIR" && npm install
+
+      - name: Render MP4
+        run: cd "$DIR" && npx remotion render src/index.ts Main out/video.mp4 --codec h264 --crf 18 --concurrency 2
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: goalzone-video
+          path: ${{ env.DIR }}/out/video.mp4
+
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "video-${{ github.run_number }}" "$DIR/out/video.mp4" \
+            --title "Goal Zone video #${{ github.run_number }}" \
+            --notes "Rendered MP4"
